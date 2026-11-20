@@ -74,6 +74,7 @@ import java.io.File
 fun PageOrganizerScreen(
     uiState: OrganizerUiState,
     appDocuments: List<PdfDocumentEntity>,
+    onPickFromMobile: () -> Unit,
     onSelectAppDocument: (PdfDocumentEntity) -> Unit,
     onMovePage: (Int, Int) -> Unit,
     onRotatePage: (Int) -> Unit,
@@ -244,24 +245,37 @@ fun PageOrganizerScreen(
                             .padding(16.dp),
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        OutlinedButton(
-                            onClick = { onSaveOrganized(true) },
-                            modifier = Modifier.weight(1f).height(50.dp),
-                            shape = RoundedCornerShape(14.dp)
-                        ) {
-                            Icon(Icons.Filled.PictureAsPdf, contentDescription = null)
-                            Spacer(Modifier.width(6.dp))
-                            Text("নতুন কপি সেভ")
-                        }
-                        Button(
-                            onClick = { onSaveOrganized(false) },
-                            modifier = Modifier.weight(1f).height(50.dp),
-                            shape = RoundedCornerShape(14.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = RoyalBlue)
-                        ) {
-                            Icon(Icons.Filled.Save, contentDescription = null)
-                            Spacer(Modifier.width(6.dp))
-                            Text("আপডেট করুন")
+                        if (uiState.sourceDocumentId != null) {
+                            OutlinedButton(
+                                onClick = { onSaveOrganized(true) },
+                                modifier = Modifier.weight(1f).height(50.dp),
+                                shape = RoundedCornerShape(14.dp)
+                            ) {
+                                Icon(Icons.Filled.PictureAsPdf, contentDescription = null)
+                                Spacer(Modifier.width(6.dp))
+                                Text("নতুন কপি সেভ")
+                            }
+                            Button(
+                                onClick = { onSaveOrganized(false) },
+                                modifier = Modifier.weight(1f).height(50.dp),
+                                shape = RoundedCornerShape(14.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = RoyalBlue)
+                            ) {
+                                Icon(Icons.Filled.Save, contentDescription = null)
+                                Spacer(Modifier.width(6.dp))
+                                Text("আপডেট করুন")
+                            }
+                        } else {
+                            Button(
+                                onClick = { onSaveOrganized(true) },
+                                modifier = Modifier.fillMaxWidth().height(50.dp),
+                                shape = RoundedCornerShape(14.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = RoyalBlue)
+                            ) {
+                                Icon(Icons.Filled.PictureAsPdf, contentDescription = null)
+                                Spacer(Modifier.width(6.dp))
+                                Text("নতুন কপি হিসেবে সেভ করুন")
+                            }
                         }
                     }
                 }
@@ -273,7 +287,8 @@ fun PageOrganizerScreen(
         SelectPdfDocumentDialog(
             title = "পৃষ্ঠা সাজানোর পিডিএফ বাছুন",
             documents = appDocuments,
-            allowExternalPick = false,
+            allowExternalPick = true,
+            onPickExternal = onPickFromMobile,
             onSelectDocument = onSelectAppDocument,
             onDismiss = { showPicker = false }
         )

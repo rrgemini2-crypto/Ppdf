@@ -138,12 +138,106 @@ class ExampleRobolectricTest {
 
         pdfDao.setFavorite(docId, true)
         pdfDao.renameDocument(docId, "নতুন_চুক্তিপত্র")
+        folderDao.renameFolder(folderId, "জরুরি অফিস")
 
         val favs = pdfDao.getFavoriteDocuments().first()
+        val folders = folderDao.getAllFolders().first()
         assertEquals(1, favs.size)
         assertEquals("নতুন_চুক্তিপত্র", favs.first().name)
+        assertEquals("PDF", favs.first().fileType)
         assertEquals(folderId, favs.first().folderId)
+        assertEquals("জরুরি অফিস", folders.first().name)
 
         db.close()
+    }
+
+    @Test
+    fun `docx writer and word document parser round-trip Bengali text headings and tables`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val docxFile = File(context.cacheDir, "roundtrip_test.docx")
+        val blocks = listOf(
+            com.example.engine.WordBlock.ParagraphBlock(
+                text = "সহজ পিডিএফ প্রতিবেদন",
+                isHeading = true,
+                headingLevel = 1,
+                isBold = true,
+                alignment = com.example.engine.WordAlign.CENTER
+            ),
+            com.example.engine.WordBlock.ParagraphBlock(
+                text = "এটি একটি বাংলা এবং English পরীক্ষামূলক অনুচ্ছেদ।",
+                isBold = false
+            ),
+            com.example.engine.WordBlock.TableBlock(
+                rows = listOf(
+                    listOf("নাম", "সংখ্যা"),
+                    listOf("কলম", "১০")
+                )
+            )
+        )
+
+        com.example.engine.PdfToWordEngine.writeDocxPackage(docxFile, blocks)
+        assertTrue(docxFile.exists() && docxFile.length() > 200L)
+
+        val parsedResult = com.example.engine.WordDocumentParser.parseWordFile(docxFile, "প্রতিবেদন")
+        assertTrue(parsedResult.isSuccess)
+        val parsed = parsedResult.getOrThrow()
+        assertEquals("DOCX", parsed.sourceFormat)
+        assertEquals(3, parsed.blocks.size)
+
+        val h = parsed.blocks[0] as com.example.engine.WordBlock.ParagraphBlock
+        assertEquals("সহজ পিডিএফ প্রতিবেদন", h.text)
+        assertTrue(h.isHeading)
+        assertEquals(com.example.engine.WordAlign.CENTER, h.alignment)
+
+        val p = parsed.blocks[1] as com.example.engine.WordBlock.ParagraphBlock
+        assertTrue(p.text.contains("বাংলা"))
+        assertTrue(p.text.contains("English"))
+
+        val tbl = parsed.blocks[2] as com.example.engine.WordBlock.TableBlock
+        assertEquals(2, tbl.rows.size)
+        assertEquals("কলম", tbl.rows[1][0])
+        assertEquals("১০", tbl.rows[1][1])
+    }
+
+    @Test
+    fun `text to pdf preview paginates long Bengali content into multiple pages`() {
+        val longBody = (1..80).joinToString("\n") {
+            "লাইন ${BengaliFormatters.toBengaliDigits(it)}: সহজ পিডিএফ মেকার দিয়ে দ্রুত বাংলা ও ইংরেজি নথি তৈরি করা যায়।"
+        }
+        val pages = com.example.engine.TextToPdfEngine.paginateTextForPreview(
+            title = "পরীক্ষামূলক শিরোনাম",
+            bodyText = longBody,
+            fontSizePt = 13f,
+            pageSize = PdfPageSize.A4
+        )
+        assertTrue("Expected multiple pages", pages.size >= 2)
+        assertTrue(pages.first().showTitle)
+        assertEquals(false, pages[1].showTitle)
+    }
+
+    @Test
+    fun `long image stitcher merges pages vertically into valid image`() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val page1 = File(context.cacheDir, "stitch_p1.png")
+        val page2 = File(context.cacheDir, "stitch_p2.png")
+        listOf(page1 to Color.RED, page2 to Color.BLUE).forEach { (f, color) ->
+            val bmp = Bitmap.createBitmap(300, 400, Bitmap.Config.ARGB_8888)
+            bmp.eraseColor(color)
+            FileOutputStream(f).use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            bmp.recycle()
+        }
+
+        val outFile = File(context.cacheDir, "stitched_out.jpg")
+        val res = com.example.engine.LongImageStitcher.stitchPagesToLongImage(
+            pageImageFiles = listOf(page1, page2),
+            outputFile = outFile,
+            format = com.example.util.ImageOutputFormat.JPG,
+            quality = com.example.util.ImageExportQuality.HIGH
+        )
+        assertTrue(res.isSuccess)
+        val info = res.getOrThrow()
+        assertEquals(2, info.pagesStitched)
+        assertTrue(info.heightPx > info.widthPx)
+        assertTrue(outFile.exists() && outFile.length() > 0L)
     }
 }

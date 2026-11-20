@@ -23,6 +23,26 @@ import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
 
+enum class ImageOutputFormat(
+    val titleBn: String,
+    val extension: String,
+    val mimeType: String,
+    val compressFormat: Bitmap.CompressFormat
+) {
+    JPG("JPG", "jpg", "image/jpeg", Bitmap.CompressFormat.JPEG),
+    PNG("PNG", "png", "image/png", Bitmap.CompressFormat.PNG)
+}
+
+enum class ImageExportQuality(
+    val titleBn: String,
+    val jpegQuality: Int,
+    val renderScale: Float
+) {
+    HIGH("উচ্চ মান", 94, 2.2f),
+    MEDIUM("মাঝারি মান", 78, 1.7f),
+    LOW("কম মান", 58, 1.25f)
+}
+
 object FileActionsHelper {
 
     fun getFileProviderUri(context: Context, file: File): Uri {
@@ -34,16 +54,32 @@ object FileActionsHelper {
     }
 
     fun sharePdf(context: Context, file: File, displayTitle: String): Result<Unit> {
+        return shareDocumentFile(
+            context = context,
+            file = file,
+            mimeType = "application/pdf",
+            displayTitle = displayTitle,
+            chooserTitle = "পিডিএফ শেয়ার করুন"
+        )
+    }
+
+    fun shareDocumentFile(
+        context: Context,
+        file: File,
+        mimeType: String,
+        displayTitle: String,
+        chooserTitle: String = "ফাইল শেয়ার করুন"
+    ): Result<Unit> {
         return runCatching {
-            if (!file.exists()) error("পিডিএফ ফাইলটি পাওয়া যায়নি।")
+            if (!file.exists()) error("ফাইলটি পাওয়া যায়নি।")
             val uri = getFileProviderUri(context, file)
             val intent = Intent(Intent.ACTION_SEND).apply {
-                type = "application/pdf"
+                type = mimeType
                 putExtra(Intent.EXTRA_STREAM, uri)
                 putExtra(Intent.EXTRA_SUBJECT, displayTitle)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
-            val chooser = Intent.createChooser(intent, "পিডিএফ শেয়ার করুন").apply {
+            val chooser = Intent.createChooser(intent, chooserTitle).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             context.startActivity(chooser)
@@ -85,12 +121,30 @@ object FileActionsHelper {
     }
 
     fun saveBitmapToGallery(context: Context, bitmap: Bitmap, fileNameWithoutExt: String): Result<String> {
+        return saveBitmapToGalleryWithFormat(
+            context = context,
+            bitmap = bitmap,
+            fileNameWithoutExt = fileNameWithoutExt,
+            format = ImageOutputFormat.PNG,
+            qualityPercent = 100
+        )
+    }
+
+    fun saveBitmapToGalleryWithFormat(
+        context: Context,
+        bitmap: Bitmap,
+        fileNameWithoutExt: String,
+        format: ImageOutputFormat,
+        qualityPercent: Int
+    ): Result<String> {
         return runCatching {
-            val fileName = "${fileNameWithoutExt}.png"
+            val safeName = BengaliFormatters.sanitizeFileName(fileNameWithoutExt)
+            val fileName = "$safeName.${format.extension}"
+            val q = qualityPercent.coerceIn(30, 100)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 val values = ContentValues().apply {
                     put(MediaStore.Images.Media.DISPLAY_NAME, fileName)
-                    put(MediaStore.Images.Media.MIME_TYPE, "image/png")
+                    put(MediaStore.Images.Media.MIME_TYPE, format.mimeType)
                     put(
                         MediaStore.Images.Media.RELATIVE_PATH,
                         "${Environment.DIRECTORY_PICTURES}/SahajPdfMaker"
@@ -101,7 +155,7 @@ object FileActionsHelper {
                 val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
                     ?: error("গ্যালারিতে ছবি সংরক্ষণ করা যায়নি।")
                 resolver.openOutputStream(uri)?.use { out ->
-                    if (!bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)) {
+                    if (!bitmap.compress(format.compressFormat, q, out)) {
                         error("ছবিটি সংরক্ষণ করতে সমস্যা হয়েছে।")
                     }
                 } ?: error("ফাইল আউটপুট স্ট্রিম খোলা যায়নি।")
@@ -116,10 +170,55 @@ object FileActionsHelper {
                 ).apply { mkdirs() }
                 val outFile = File(dir, fileName)
                 FileOutputStream(outFile).use { out ->
-                    bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+                    bitmap.compress(format.compressFormat, q, out)
                 }
                 outFile.absolutePath
             }
+        }
+    }
+
+    fun saveBitmapToFolderUri(
+        context: Context,
+        bitmap: Bitmap,
+        treeUri: Uri,
+        fileNameWithoutExt: String,
+        format: ImageOutputFormat,
+        qualityPercent: Int
+    ): Result<Unit> {
+        return runCatching {
+            val safeName = BengaliFormatters.sanitizeFileName(fileNameWithoutExt)
+            val docId = android.provider.DocumentsContract.getTreeDocumentId(treeUri)
+            val parentDocUri = android.provider.DocumentsContract.buildDocumentUriUsingTree(treeUri, docId)
+            val createdUri = android.provider.DocumentsContract.createDocument(
+                context.contentResolver,
+                parentDocUri,
+                format.mimeType,
+                "$safeName.${format.extension}"
+            ) ?: error("নির্বাচিত ফোল্ডারে ফাইল তৈরি করা যায়নি।")
+
+            val q = qualityPercent.coerceIn(30, 100)
+            context.contentResolver.openOutputStream(createdUri)?.use { out ->
+                if (!bitmap.compress(format.compressFormat, q, out)) {
+                    error("ছবি সংরক্ষণ করতে সমস্যা হয়েছে।")
+                }
+            } ?: error("আউটপুট স্ট্রিম খোলা যায়নি।")
+        }
+    }
+
+    fun saveBitmapToUri(
+        context: Context,
+        bitmap: Bitmap,
+        destUri: Uri,
+        format: ImageOutputFormat,
+        qualityPercent: Int
+    ): Boolean {
+        return try {
+            val q = qualityPercent.coerceIn(30, 100)
+            context.contentResolver.openOutputStream(destUri)?.use { out ->
+                bitmap.compress(format.compressFormat, q, out)
+            } ?: false
+        } catch (_: Exception) {
+            false
         }
     }
 
@@ -150,7 +249,7 @@ object FileActionsHelper {
         }
     }
 
-    fun queryDisplayName(context: Context, uri: Uri): String {
+    fun queryDisplayNameWithExtension(context: Context, uri: Uri): String {
         var result: String? = null
         try {
             context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
@@ -161,7 +260,19 @@ object FileActionsHelper {
             }
         } catch (_: Exception) {
         }
-        return (result ?: uri.lastPathSegment ?: BengaliFormatters.defaultPdfTitle())
+        return result ?: uri.lastPathSegment ?: BengaliFormatters.defaultPdfTitle()
+    }
+
+    fun queryMimeType(context: Context, uri: Uri): String? {
+        return try {
+            context.contentResolver.getType(uri)
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    fun queryDisplayName(context: Context, uri: Uri): String {
+        return queryDisplayNameWithExtension(context, uri)
             .removeSuffix(".pdf")
             .removeSuffix(".PDF")
     }

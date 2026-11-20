@@ -189,6 +189,53 @@ fun CreateFolderDialog(
     )
 }
 
+@Composable
+fun RenameFolderDialog(
+    initialName: String,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit
+) {
+    var folderName by remember(initialName) { mutableStateOf(initialName) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = WhiteBackground,
+        title = {
+            Text(
+                text = "ফোল্ডারের নাম পরিবর্তন",
+                style = MaterialTheme.typography.titleLarge,
+                color = DeepInk
+            )
+        },
+        text = {
+            OutlinedTextField(
+                value = folderName,
+                onValueChange = { folderName = it },
+                label = { Text("ফোল্ডারের নতুন নাম") },
+                singleLine = true,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("rename_folder_input")
+            )
+        },
+        confirmButton = {
+            Button(
+                onClick = { onConfirm(folderName) },
+                enabled = folderName.isNotBlank(),
+                colors = ButtonDefaults.buttonColors(containerColor = RoyalBlue),
+                modifier = Modifier.testTag("rename_folder_confirm_button")
+            ) {
+                Text("সংরক্ষণ করুন")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("বাতিল", color = MutedInk)
+            }
+        }
+    )
+}
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun DocumentInfoDialog(
@@ -213,6 +260,7 @@ fun DocumentInfoDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 InfoRow("ফাইলের নাম", document.name)
+                InfoRow("ফাইলের ধরন", document.fileType)
                 InfoRow("ফাইলের আকার", BengaliFormatters.formatFileSize(document.sizeBytes))
                 InfoRow("মোট পৃষ্ঠা", BengaliFormatters.formatPageCount(document.pageCount))
                 InfoRow("তৈরির তারিখ", BengaliFormatters.formatDateTime(document.createdAt))

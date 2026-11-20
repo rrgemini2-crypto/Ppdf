@@ -11,27 +11,18 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.AddPhotoAlternate
-import androidx.compose.material.icons.filled.CameraAlt
-import androidx.compose.material.icons.filled.Compress
-import androidx.compose.material.icons.filled.DocumentScanner
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Home
@@ -44,7 +35,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
@@ -52,7 +42,6 @@ import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.NavigationRailItemDefaults
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -61,7 +50,6 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -74,11 +62,15 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.example.data.local.FolderEntity
 import com.example.data.local.PdfDocumentEntity
+import com.example.ui.components.CreateActionBottomSheet
 import com.example.ui.components.CreateFolderDialog
+import com.example.ui.components.CreateSheetAction
 import com.example.ui.components.DeleteConfirmDialog
 import com.example.ui.components.DocumentInfoDialog
 import com.example.ui.components.RenameDocumentDialog
+import com.example.ui.components.RenameFolderDialog
 import com.example.ui.components.SelectPdfDocumentDialog
 import com.example.ui.screens.DocumentScannerScreen
 import com.example.ui.screens.FavoritesTab
@@ -88,17 +80,19 @@ import com.example.ui.screens.PageOrganizerScreen
 import com.example.ui.screens.PdfCompressScreen
 import com.example.ui.screens.PdfSettingsScreen
 import com.example.ui.screens.PdfToImageScreen
+import com.example.ui.screens.PdfToLongImageScreen
+import com.example.ui.screens.PdfToWordScreen
 import com.example.ui.screens.PdfViewerScreen
 import com.example.ui.screens.RecentTab
+import com.example.ui.screens.TextToPdfScreen
 import com.example.ui.screens.ToolAction
 import com.example.ui.screens.ToolsTab
+import com.example.ui.screens.WordToPdfScreen
 import com.example.ui.screens.WorkspaceScreen
-import com.example.ui.theme.DeepInk
 import com.example.ui.theme.LightBlueHeader
 import com.example.ui.theme.LightBlueTint
 import com.example.ui.theme.MutedInk
 import com.example.ui.theme.RoyalBlue
-import com.example.ui.theme.SubtleBorder
 import com.example.ui.theme.WhiteBackground
 import com.example.util.FileActionsHelper
 import java.io.File
@@ -113,6 +107,10 @@ private object AppRoutes {
     const val PDF_COMPRESS = "pdf_compress"
     const val PDF_TO_IMAGE = "pdf_to_image"
     const val PAGE_ORGANIZER = "page_organizer"
+    const val TEXT_TO_PDF = "text_to_pdf"
+    const val WORD_TO_PDF = "word_to_pdf"
+    const val PDF_TO_WORD = "pdf_to_word"
+    const val PDF_TO_LONG_IMAGE = "pdf_to_long_image"
 
     fun scanner(scanMode: Boolean) = "scanner/$scanMode"
     fun imageEditor(pageId: String, initialTab: Int = 0, standalone: Boolean = false) =
@@ -160,6 +158,10 @@ fun MainApp(viewModel: MainViewModel) {
     val compressionState by viewModel.compressionState.collectAsStateWithLifecycle()
     val pdfToImageState by viewModel.pdfToImageState.collectAsStateWithLifecycle()
     val organizerState by viewModel.organizerState.collectAsStateWithLifecycle()
+    val textToPdfState by viewModel.textToPdfState.collectAsStateWithLifecycle()
+    val wordToPdfState by viewModel.wordToPdfState.collectAsStateWithLifecycle()
+    val pdfToWordState by viewModel.pdfToWordState.collectAsStateWithLifecycle()
+    val pdfToLongImageState by viewModel.pdfToLongImageState.collectAsStateWithLifecycle()
 
     LaunchedEffect(Unit) {
         viewModel.toastEvents.collect { msg ->
@@ -175,11 +177,13 @@ fun MainApp(viewModel: MainViewModel) {
     var deleteTarget by remember { mutableStateOf<PdfDocumentEntity?>(null) }
     var infoTarget by remember { mutableStateOf<PdfDocumentEntity?>(null) }
     var showCreateFolderDialog by remember { mutableStateOf(false) }
+    var renameFolderTarget by remember { mutableStateOf<FolderEntity?>(null) }
     var pendingPickPurpose by remember { mutableStateOf<PendingPdfPickPurpose?>(null) }
 
     // Pending single-image editor target tab
     var pendingSingleEditTab by remember { mutableIntStateOf(0) }
     var pendingFileToExport by remember { mutableStateOf<File?>(null) }
+    var pendingDocxToExport by remember { mutableStateOf<File?>(null) }
 
     // Activity Result Launchers (Zero Broad Storage Permissions!)
     val multiImagePicker = rememberLauncherForActivityResult(
@@ -217,6 +221,54 @@ fun MainApp(viewModel: MainViewModel) {
         }
     }
 
+    val importFilesLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris ->
+        if (uris.isNotEmpty()) {
+            viewModel.importPickedFiles(
+                uris = uris,
+                onOpenWorkspace = { navController.navigate(AppRoutes.WORKSPACE) },
+                onOpenWordToPdf = { navController.navigate(AppRoutes.WORD_TO_PDF) },
+                onOpenTextToPdf = { navController.navigate(AppRoutes.TEXT_TO_PDF) }
+            )
+        }
+    }
+
+    val importTxtLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) viewModel.importTextFileToEditor(uri)
+    }
+
+    val pickWordFileLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) viewModel.loadWordUri(uri)
+    }
+
+    val externalPdfForWordLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) viewModel.selectExternalPdfForWord(uri)
+    }
+
+    val externalPdfForLongImageLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) viewModel.loadExternalPdfForLongImage(uri)
+    }
+
+    val externalPdfForOrganizerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            viewModel.loadExternalPdfForOrganizer(uri)
+            if (navController.currentDestination?.route != AppRoutes.PAGE_ORGANIZER) {
+                navController.navigate(AppRoutes.PAGE_ORGANIZER)
+            }
+        }
+    }
+
     val externalPdfForCompressLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri: Uri? ->
@@ -242,6 +294,19 @@ fun MainApp(viewModel: MainViewModel) {
             val ok = FileActionsHelper.copyFileToUri(context, src, destUri)
             viewModel.showToast(
                 if (ok) "নির্বাচিত ফোল্ডারে সংরক্ষণ করা হয়েছে।" else "ফাইল সংরক্ষণ করতে সমস্যা হয়েছে।"
+            )
+        }
+    }
+
+    val saveDocxCopyLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+    ) { destUri: Uri? ->
+        val src = pendingDocxToExport
+        pendingDocxToExport = null
+        if (destUri != null && src != null && src.exists()) {
+            val ok = FileActionsHelper.copyFileToUri(context, src, destUri)
+            viewModel.showToast(
+                if (ok) "ওয়ার্ড ফাইলটি ফোল্ডারে সংরক্ষণ করা হয়েছে।" else "ফাইল সংরক্ষণ করতে সমস্যা হয়েছে।"
             )
         }
     }
@@ -383,6 +448,7 @@ fun MainApp(viewModel: MainViewModel) {
                                     onSearchQueryChange = viewModel::setSearchQuery,
                                     onSelectFolder = viewModel::setSelectedFolder,
                                     onCreateFolderClick = { showCreateFolderDialog = true },
+                                    onRenameFolderClick = { folder -> renameFolderTarget = folder },
                                     onDeleteFolderClick = { folder -> viewModel.deleteFolder(folder.id) },
                                     onImageToPdfClick = { startFreshGalleryToPdf() },
                                     onScanDocumentClick = { startFreshScanner(scanMode = true) },
@@ -422,7 +488,23 @@ fun MainApp(viewModel: MainViewModel) {
                                             ToolAction.MULTI_IMAGE_TO_PDF -> startFreshGalleryToPdf()
                                             ToolAction.CAMERA_TO_PDF -> startFreshScanner(scanMode = false)
                                             ToolAction.DOCUMENT_SCAN -> startFreshScanner(scanMode = true)
+                                            ToolAction.TEXT_TO_PDF -> {
+                                                viewModel.resetTextToPdf()
+                                                navController.navigate(AppRoutes.TEXT_TO_PDF)
+                                            }
+                                            ToolAction.WORD_TO_PDF -> {
+                                                viewModel.resetWordToPdf()
+                                                navController.navigate(AppRoutes.WORD_TO_PDF)
+                                            }
+                                            ToolAction.PDF_TO_WORD -> {
+                                                viewModel.resetPdfToWord()
+                                                navController.navigate(AppRoutes.PDF_TO_WORD)
+                                            }
                                             ToolAction.PDF_TO_IMAGE -> navController.navigate(AppRoutes.PDF_TO_IMAGE)
+                                            ToolAction.PDF_TO_LONG_IMAGE -> {
+                                                viewModel.resetPdfToLongImage()
+                                                navController.navigate(AppRoutes.PDF_TO_LONG_IMAGE)
+                                            }
                                             ToolAction.COMPRESS_PDF -> {
                                                 viewModel.resetCompression()
                                                 navController.navigate(AppRoutes.PDF_COMPRESS)
@@ -448,6 +530,17 @@ fun MainApp(viewModel: MainViewModel) {
                                             ToolAction.ORGANIZE_PAGES -> {
                                                 viewModel.resetOrganizer()
                                                 pendingPickPurpose = PendingPdfPickPurpose.ORGANIZE
+                                            }
+                                            ToolAction.IMPORT_FILES -> {
+                                                importFilesLauncher.launch(
+                                                    arrayOf(
+                                                        "application/pdf",
+                                                        "image/*",
+                                                        "text/plain",
+                                                        "application/msword",
+                                                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                                                    )
+                                                )
                                             }
                                             ToolAction.RENAME_PDF -> pendingPickPurpose = PendingPdfPickPurpose.RENAME
                                             ToolAction.SHARE_PDF -> pendingPickPurpose = PendingPdfPickPurpose.SHARE
@@ -660,6 +753,8 @@ fun MainApp(viewModel: MainViewModel) {
                 onSelectAppDocument = viewModel::loadPdfForImageExport,
                 onToggleSelect = viewModel::togglePdfToImageSelection,
                 onSelectAll = viewModel::selectAllPdfToImage,
+                onSelectFormat = viewModel::setPdfToImageFormat,
+                onSelectQuality = viewModel::setPdfToImageQuality,
                 onBack = { navController.popBackStack() }
             )
         }
@@ -668,6 +763,7 @@ fun MainApp(viewModel: MainViewModel) {
             PageOrganizerScreen(
                 uiState = organizerState,
                 appDocuments = allDocs,
+                onPickFromMobile = { externalPdfForOrganizerLauncher.launch(arrayOf("application/pdf")) },
                 onSelectAppDocument = viewModel::loadDocumentForOrganizer,
                 onMovePage = viewModel::moveOrganizerPage,
                 onRotatePage = viewModel::rotateOrganizerPage,
@@ -682,67 +778,142 @@ fun MainApp(viewModel: MainViewModel) {
                 onBack = { navController.popBackStack() }
             )
         }
+
+        composable(AppRoutes.TEXT_TO_PDF) {
+            TextToPdfScreen(
+                uiState = textToPdfState,
+                onUpdateState = viewModel::updateTextToPdf,
+                onImportTxtFile = { importTxtLauncher.launch(arrayOf("text/plain", "text/*")) },
+                onCreatePdf = viewModel::createPdfFromText,
+                onOpenCreatedPdf = { docId ->
+                    viewModel.markOpened(docId)
+                    navController.navigate(AppRoutes.pdfViewer(docId)) {
+                        popUpTo(AppRoutes.MAIN_TABS)
+                    }
+                },
+                onShareCreatedPdf = { docId ->
+                    allDocs.find { it.id == docId }?.let(::shareDocument)
+                },
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(AppRoutes.WORD_TO_PDF) {
+            WordToPdfScreen(
+                uiState = wordToPdfState,
+                onPickWordFile = {
+                    pickWordFileLauncher.launch(
+                        arrayOf(
+                            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                            "application/msword"
+                        )
+                    )
+                },
+                onConvertToPdf = viewModel::convertWordToPdf,
+                onOpenCreatedPdf = { docId ->
+                    viewModel.markOpened(docId)
+                    navController.navigate(AppRoutes.pdfViewer(docId)) {
+                        popUpTo(AppRoutes.MAIN_TABS)
+                    }
+                },
+                onShareCreatedPdf = { docId ->
+                    allDocs.find { it.id == docId }?.let(::shareDocument)
+                },
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(AppRoutes.PDF_TO_WORD) {
+            PdfToWordScreen(
+                uiState = pdfToWordState,
+                appDocuments = allDocs,
+                onPickFromMobile = { externalPdfForWordLauncher.launch(arrayOf("application/pdf")) },
+                onSelectAppDocument = viewModel::selectAppPdfForWord,
+                onDownloadOcrPack = viewModel::downloadBengaliOcrPack,
+                onConvertToWord = viewModel::convertPdfToWord,
+                onSaveDocxCopy = { file, name ->
+                    pendingDocxToExport = file
+                    saveDocxCopyLauncher.launch("$name.docx")
+                },
+                onShareDocx = { file, name ->
+                    FileActionsHelper.shareDocumentFile(
+                        context = context,
+                        file = file,
+                        mimeType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                        displayTitle = name,
+                        chooserTitle = "ওয়ার্ড ফাইল শেয়ার করুন"
+                    ).onFailure {
+                        viewModel.showToast("ওয়ার্ড ফাইলটি শেয়ার করা যায়নি।")
+                    }
+                },
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(AppRoutes.PDF_TO_LONG_IMAGE) {
+            PdfToLongImageScreen(
+                uiState = pdfToLongImageState,
+                appDocuments = allDocs,
+                onPickFromMobile = { externalPdfForLongImageLauncher.launch(arrayOf("application/pdf")) },
+                onSelectAppDocument = viewModel::loadAppPdfForLongImage,
+                onTogglePage = viewModel::toggleLongImagePage,
+                onSelectAll = viewModel::selectAllLongImagePages,
+                onSelectFormat = viewModel::setLongImageFormat,
+                onSelectQuality = viewModel::setLongImageQuality,
+                onGenerateLongImage = viewModel::generateLongImage,
+                onBack = { navController.popBackStack() }
+            )
+        }
     }
 
-    // Create Bottom Sheet
+    // Modern Reference-Matched Create Bottom Sheet
     if (showCreateSheet) {
-        ModalBottomSheet(
-            onDismissRequest = { showCreateSheet = false },
-            containerColor = WhiteBackground
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .navigationBarsPadding()
-                    .padding(horizontal = 20.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                Text(
-                    text = "নতুন পিডিএফ তৈরি করুন",
-                    style = MaterialTheme.typography.titleLarge,
-                    color = DeepInk,
-                    fontWeight = FontWeight.Bold
-                )
-                SheetActionRow(
-                    icon = Icons.Filled.AddPhotoAlternate,
-                    title = "গ্যালারি থেকে ছবি নির্বাচন",
-                    subtitle = "এক বা একাধিক ছবি থেকে পিডিএফ তৈরি করুন",
-                    onClick = {
-                        showCreateSheet = false
-                        startFreshGalleryToPdf()
+        CreateActionBottomSheet(
+            onDismiss = { showCreateSheet = false },
+            onActionSelected = { action ->
+                when (action) {
+                    CreateSheetAction.IMPORT_FILES -> {
+                        importFilesLauncher.launch(
+                            arrayOf(
+                                "application/pdf",
+                                "image/*",
+                                "text/plain",
+                                "application/msword",
+                                "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                            )
+                        )
                     }
-                )
-                SheetActionRow(
-                    icon = Icons.Filled.DocumentScanner,
-                    title = "স্বয়ংক্রিয় দলিল স্ক্যান",
-                    subtitle = "কাগজের চারপাশ শনাক্ত করে পরিষ্কার স্ক্যান",
-                    onClick = {
-                        showCreateSheet = false
-                        startFreshScanner(scanMode = true)
+                    CreateSheetAction.CREATE_FOLDER -> showCreateFolderDialog = true
+                    CreateSheetAction.IMAGE_TO_PDF -> startFreshGalleryToPdf()
+                    CreateSheetAction.SCAN_TO_PDF -> startFreshScanner(scanMode = true)
+                    CreateSheetAction.WORD_TO_PDF -> {
+                        viewModel.resetWordToPdf()
+                        navController.navigate(AppRoutes.WORD_TO_PDF)
                     }
-                )
-                SheetActionRow(
-                    icon = Icons.Filled.CameraAlt,
-                    title = "ক্যামেরা দিয়ে ছবি তোলা",
-                    subtitle = "সরাসরি ছবি তুলে পিডিএফ বানান",
-                    onClick = {
-                        showCreateSheet = false
-                        startFreshScanner(scanMode = false)
+                    CreateSheetAction.PDF_TO_WORD -> {
+                        viewModel.resetPdfToWord()
+                        navController.navigate(AppRoutes.PDF_TO_WORD)
                     }
-                )
-                SheetActionRow(
-                    icon = Icons.Filled.Compress,
-                    title = "পিডিএফ সংকুচিত করা",
-                    subtitle = "আগে থেকে থাকা পিডিএফের আকার কমান",
-                    onClick = {
-                        showCreateSheet = false
+                    CreateSheetAction.TEXT_TO_PDF -> {
+                        viewModel.resetTextToPdf()
+                        navController.navigate(AppRoutes.TEXT_TO_PDF)
+                    }
+                    CreateSheetAction.PDF_TO_IMAGE -> navController.navigate(AppRoutes.PDF_TO_IMAGE)
+                    CreateSheetAction.PDF_TO_LONG_IMAGE -> {
+                        viewModel.resetPdfToLongImage()
+                        navController.navigate(AppRoutes.PDF_TO_LONG_IMAGE)
+                    }
+                    CreateSheetAction.COMPRESS_PDF -> {
                         viewModel.resetCompression()
                         navController.navigate(AppRoutes.PDF_COMPRESS)
                     }
-                )
-                Spacer(Modifier.height(14.dp))
+                    CreateSheetAction.ORGANIZE_PDF_PAGES -> {
+                        viewModel.resetOrganizer()
+                        pendingPickPurpose = PendingPdfPickPurpose.ORGANIZE
+                    }
+                }
             }
-        }
+        )
     }
 
     // Rename Dialog
@@ -753,6 +924,18 @@ fun MainApp(viewModel: MainViewModel) {
             onConfirm = { newName ->
                 viewModel.renameDocument(target.id, newName)
                 renameTarget = null
+            }
+        )
+    }
+
+    // Rename Folder Dialog
+    renameFolderTarget?.let { folder ->
+        RenameFolderDialog(
+            initialName = folder.name,
+            onDismiss = { renameFolderTarget = null },
+            onConfirm = { newName ->
+                viewModel.renameFolder(folder.id, newName)
+                renameFolderTarget = null
             }
         )
     }
@@ -819,7 +1002,12 @@ fun MainApp(viewModel: MainViewModel) {
         SelectPdfDocumentDialog(
             title = dialogTitle,
             documents = allDocs,
-            allowExternalPick = false,
+            allowExternalPick = purpose == PendingPdfPickPurpose.ORGANIZE,
+            onPickExternal = {
+                if (purpose == PendingPdfPickPurpose.ORGANIZE) {
+                    externalPdfForOrganizerLauncher.launch(arrayOf("application/pdf"))
+                }
+            },
             onSelectDocument = { doc ->
                 when (purpose) {
                     PendingPdfPickPurpose.COMPRESS -> {
@@ -842,51 +1030,5 @@ fun MainApp(viewModel: MainViewModel) {
             },
             onDismiss = { pendingPickPurpose = null }
         )
-    }
-}
-
-@Composable
-private fun SheetActionRow(
-    icon: ImageVector,
-    title: String,
-    subtitle: String,
-    onClick: () -> Unit
-) {
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick),
-        shape = RoundedCornerShape(14.dp),
-        color = LightBlueTint,
-        border = BorderStroke(1.dp, SubtleBorder)
-    ) {
-        Row(
-            modifier = Modifier.padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Surface(
-                shape = RoundedCornerShape(10.dp),
-                color = RoyalBlue,
-                modifier = Modifier.size(42.dp)
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(icon, contentDescription = null, tint = WhiteBackground)
-                }
-            }
-            Spacer(Modifier.width(12.dp))
-            Column {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleSmall,
-                    color = DeepInk,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MutedInk
-                )
-            }
-        }
     }
 }

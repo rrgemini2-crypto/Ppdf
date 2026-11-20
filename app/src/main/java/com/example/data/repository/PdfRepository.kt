@@ -29,12 +29,19 @@ class PdfRepository(private val context: Context) {
     fun pdfsDir(): File = File(context.filesDir, "pdfs").apply { mkdirs() }
     fun thumbnailsDir(): File = File(context.filesDir, "thumbnails").apply { mkdirs() }
     fun workspaceDir(): File = File(context.filesDir, "workspace").apply { mkdirs() }
+    fun exportsDir(): File = File(context.filesDir, "exports").apply { mkdirs() }
 
     fun createNewPdfTargetPair(): Pair<File, File> {
         val token = UUID.randomUUID().toString().take(12)
         val pdfFile = File(pdfsDir(), "pdf_$token.pdf")
         val thumbFile = File(thumbnailsDir(), "thumb_$token.png")
         return pdfFile to thumbFile
+    }
+
+    fun createNewExportFile(baseName: String, extension: String): File {
+        val clean = BengaliFormatters.sanitizeFileName(baseName)
+        val token = UUID.randomUUID().toString().take(6)
+        return File(exportsDir(), "${clean}_$token.$extension")
     }
 
     suspend fun getDocumentById(id: Long): PdfDocumentEntity? = pdfDao.getDocumentById(id)
@@ -57,10 +64,61 @@ class PdfRepository(private val context: Context) {
             createdAt = now,
             lastOpenedAt = now,
             isFavorite = false,
-            isCompressed = isCompressed
+            isCompressed = isCompressed,
+            fileType = "PDF"
         )
         val id = pdfDao.insertDocument(entity)
         return entity.copy(id = id)
+    }
+
+    suspend fun importPdfUri(uri: Uri, folderId: Long? = null): Result<PdfDocumentEntity> = withContext(Dispatchers.IO) {
+        runCatching {
+            val displayName = FileActionsHelper.queryDisplayName(context, uri)
+            val (pdfFile, thumbFile) = createNewPdfTargetPair()
+            val copied = FileActionsHelper.copyUriToFile(context, uri, pdfFile)
+            if (!copied) error("নির্বাচিত পিডিএফ ফাইলটি পড়া যায়নি।")
+
+            val pageCount = PdfGenerator.inspectPdfPageCount(pdfFile)
+            if (pageCount <= 0) {
+                pdfFile.delete()
+                error("ফাইলটি বৈধ পিডিএফ নয় অথবা পাসওয়ার্ড-সুরক্ষিত/ক্ষতিগ্রস্ত।")
+            }
+
+            val thumbOk = PdfGenerator.generatePdfThumbnail(pdfFile, thumbFile)
+            val now = System.currentTimeMillis()
+            val entity = PdfDocumentEntity(
+                name = BengaliFormatters.sanitizeFileName(displayName),
+                filePath = pdfFile.absolutePath,
+                thumbnailPath = if (thumbOk) thumbFile.absolutePath else null,
+                folderId = folderId,
+                sizeBytes = pdfFile.length(),
+                pageCount = pageCount,
+                createdAt = now,
+                lastOpenedAt = now,
+                isFavorite = false,
+                isCompressed = false,
+                fileType = "PDF"
+            )
+            val id = pdfDao.insertDocument(entity)
+            entity.copy(id = id)
+        }
+    }
+
+    suspend fun copyDocumentToWorkspace(uri: Uri, fallbackExt: String): Result<Pair<File, String>> = withContext(Dispatchers.IO) {
+        runCatching {
+            val rawName = FileActionsHelper.queryDisplayNameWithExtension(context, uri)
+            val dotIdx = rawName.lastIndexOf('.')
+            val ext = if (dotIdx in 1 until rawName.lastIndex) {
+                rawName.substring(dotIdx + 1).lowercase()
+            } else {
+                fallbackExt.lowercase()
+            }
+            val cleanBase = if (dotIdx > 0) rawName.substring(0, dotIdx) else rawName
+            val destFile = File(workspaceDir(), "import_${UUID.randomUUID().toString().take(8)}.$ext")
+            val copied = FileActionsHelper.copyUriToFile(context, uri, destFile)
+            if (!copied) error("ফাইলটি ডিভাইস থেকে পড়া যায়নি।")
+            destFile to cleanBase
+        }
     }
 
     suspend fun registerCompressedPdf(
@@ -83,7 +141,8 @@ class PdfRepository(private val context: Context) {
             createdAt = now,
             lastOpenedAt = now,
             isFavorite = false,
-            isCompressed = true
+            isCompressed = true,
+            fileType = "PDF"
         )
         val id = pdfDao.insertDocument(entity)
         entity.copy(id = id)
@@ -154,6 +213,13 @@ class PdfRepository(private val context: Context) {
     suspend fun createFolder(name: String): Long {
         val clean = name.trim().ifEmpty { "নতুন ফোল্ডার" }
         return folderDao.insertFolder(FolderEntity(name = clean))
+    }
+
+    suspend fun renameFolder(folderId: Long, newName: String) {
+        val clean = newName.trim()
+        if (clean.isNotEmpty()) {
+            folderDao.renameFolder(folderId, clean)
+        }
     }
 
     suspend fun deleteFolder(folderId: Long) {

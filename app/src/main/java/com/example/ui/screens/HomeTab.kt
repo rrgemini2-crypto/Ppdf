@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -66,6 +67,7 @@ fun HomeTab(
     onSearchQueryChange: (String) -> Unit,
     onSelectFolder: (Long?) -> Unit,
     onCreateFolderClick: () -> Unit,
+    onRenameFolderClick: (FolderEntity) -> Unit,
     onDeleteFolderClick: (FolderEntity) -> Unit,
     onImageToPdfClick: () -> Unit,
     onScanDocumentClick: () -> Unit,
@@ -183,50 +185,70 @@ fun HomeTab(
                 // Folder Filter Row
                 if (folders.isNotEmpty()) {
                     item {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            FilterChip(
-                                selected = selectedFolderId == null,
-                                onClick = { onSelectFolder(null) },
-                                label = { Text("সব ফাইল") },
-                                colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = RoyalBlue,
-                                    selectedLabelColor = WhiteBackground
-                                )
-                            )
-                            folders.forEach { folder ->
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
                                 FilterChip(
-                                    selected = selectedFolderId == folder.id,
-                                    onClick = { onSelectFolder(folder.id) },
-                                    leadingIcon = {
-                                        Icon(
-                                            Icons.Filled.Folder,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                    },
-                                    trailingIcon = {
-                                        Icon(
-                                            Icons.Filled.Close,
-                                            contentDescription = "ফোল্ডার মুছুন",
-                                            modifier = Modifier
-                                                .size(16.dp)
-                                                .clickable { onDeleteFolderClick(folder) }
-                                        )
-                                    },
-                                    label = { Text(folder.name) },
+                                    selected = selectedFolderId == null,
+                                    onClick = { onSelectFolder(null) },
+                                    label = { Text("সব ফাইল") },
                                     colors = FilterChipDefaults.filterChipColors(
                                         selectedContainerColor = RoyalBlue,
-                                        selectedLabelColor = WhiteBackground,
-                                        selectedLeadingIconColor = WhiteBackground,
-                                        selectedTrailingIconColor = WhiteBackground
+                                        selectedLabelColor = WhiteBackground
                                     )
                                 )
+                                folders.forEach { folder ->
+                                    FilterChip(
+                                        selected = selectedFolderId == folder.id,
+                                        onClick = { onSelectFolder(folder.id) },
+                                        leadingIcon = {
+                                            Icon(
+                                                Icons.Filled.Folder,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        },
+                                        trailingIcon = {
+                                            Icon(
+                                                Icons.Filled.Close,
+                                                contentDescription = "ফোল্ডার মুছুন",
+                                                modifier = Modifier
+                                                    .size(16.dp)
+                                                    .clickable { onDeleteFolderClick(folder) }
+                                            )
+                                        },
+                                        label = { Text(folder.name) },
+                                        colors = FilterChipDefaults.filterChipColors(
+                                            selectedContainerColor = RoyalBlue,
+                                            selectedLabelColor = WhiteBackground,
+                                            selectedLeadingIconColor = WhiteBackground,
+                                            selectedTrailingIconColor = WhiteBackground
+                                        )
+                                    )
+                                }
+                            }
+                            val activeFolder = folders.find { it.id == selectedFolderId }
+                            if (activeFolder != null) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.End,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    androidx.compose.material3.TextButton(
+                                        onClick = { onRenameFolderClick(activeFolder) }
+                                    ) {
+                                        Text(
+                                            text = "ফোল্ডারের নাম বদলান",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = RoyalBlue
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -293,7 +315,7 @@ private fun QuickActionCard(
 ) {
     Surface(
         modifier = modifier
-            .height(92.dp)
+            .heightIn(min = 96.dp)
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(16.dp),
         color = LightBlueTint,
@@ -301,8 +323,8 @@ private fun QuickActionCard(
     ) {
         Row(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 12.dp, vertical = 12.dp),
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Surface(

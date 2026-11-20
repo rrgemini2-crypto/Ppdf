@@ -12,15 +12,29 @@ import com.example.data.model.ImageFilterType
 import com.example.data.model.NormPoint
 import com.example.data.model.PageEditParams
 import com.example.data.model.PdfBuildConfig
+import com.example.data.model.PdfPageSize
 import com.example.data.model.WorkspacePage
 import com.example.data.repository.PdfRepository
 import com.example.engine.DocumentCornerDetector
 import com.example.engine.ExtractedPdfPage
 import com.example.engine.ImageFilterProcessor
+import com.example.engine.LongImageStitcher
+import com.example.engine.ParsedWordDocument
 import com.example.engine.PdfCompressor
 import com.example.engine.PdfGenerator
 import com.example.engine.PdfPageExtractor
+import com.example.engine.PdfToWordEngine
+import com.example.engine.PdfToWordResult
+import com.example.engine.StitchedLongImageResult
+import com.example.engine.TextAlignOption
+import com.example.engine.TextPdfConfig
+import com.example.engine.TextToPdfEngine
+import com.example.engine.WordDocumentParser
+import com.example.engine.WordToPdfEngine
 import com.example.util.BengaliFormatters
+import com.example.util.FileActionsHelper
+import com.example.util.ImageExportQuality
+import com.example.util.ImageOutputFormat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -70,6 +84,8 @@ data class PdfToImageUiState(
     val totalPages: Int = 0,
     val pages: List<ExtractedPdfPage> = emptyList(),
     val selectedIndices: Set<Int> = emptySet(),
+    val outputFormat: ImageOutputFormat = ImageOutputFormat.JPG,
+    val outputQuality: ImageExportQuality = ImageExportQuality.HIGH,
     val errorBn: String? = null
 )
 
@@ -83,6 +99,63 @@ data class OrganizerUiState(
     val progressTotal: Int = 0,
     val pages: List<ExtractedPdfPage> = emptyList(),
     val savedDocumentId: Long? = null,
+    val errorBn: String? = null
+)
+
+data class TextToPdfUiState(
+    val fileName: String = "",
+    val title: String = "",
+    val bodyText: String = "",
+    val fontSizePt: Float = 13f,
+    val alignment: TextAlignOption = TextAlignOption.LEFT,
+    val pageSize: PdfPageSize = PdfPageSize.A4,
+    val isBuilding: Boolean = false,
+    val createdDocId: Long? = null,
+    val createdDocName: String = "",
+    val errorBn: String? = null
+)
+
+data class WordToPdfUiState(
+    val sourceFile: File? = null,
+    val sourceName: String = "",
+    val isParsing: Boolean = false,
+    val parsedDocument: ParsedWordDocument? = null,
+    val isConverting: Boolean = false,
+    val progressCurrent: Int = 0,
+    val progressTotal: Int = 0,
+    val createdDocId: Long? = null,
+    val createdDocName: String = "",
+    val errorBn: String? = null
+)
+
+data class PdfToWordUiState(
+    val sourceFile: File? = null,
+    val sourceName: String = "",
+    val pageCount: Int = 0,
+    val hasBengaliOcrPack: Boolean = false,
+    val isDownloadingOcr: Boolean = false,
+    val ocrDownloadStatusBn: String = "",
+    val isConverting: Boolean = false,
+    val currentPage: Int = 0,
+    val totalPages: Int = 0,
+    val statusBn: String = "",
+    val result: PdfToWordResult? = null,
+    val errorBn: String? = null
+)
+
+data class PdfToLongImageUiState(
+    val sourceName: String = "",
+    val isLoadingPages: Boolean = false,
+    val currentPage: Int = 0,
+    val totalPages: Int = 0,
+    val pages: List<ExtractedPdfPage> = emptyList(),
+    val selectedIndices: Set<Int> = emptySet(),
+    val outputFormat: ImageOutputFormat = ImageOutputFormat.PNG,
+    val outputQuality: ImageExportQuality = ImageExportQuality.HIGH,
+    val isStitching: Boolean = false,
+    val stitchCurrent: Int = 0,
+    val stitchTotal: Int = 0,
+    val stitchedResult: StitchedLongImageResult? = null,
     val errorBn: String? = null
 )
 
@@ -140,6 +213,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _organizerState = MutableStateFlow(OrganizerUiState())
     val organizerState: StateFlow<OrganizerUiState> = _organizerState.asStateFlow()
+
+    private val _textToPdfState = MutableStateFlow(
+        TextToPdfUiState(fileName = BengaliFormatters.defaultPdfTitle())
+    )
+    val textToPdfState: StateFlow<TextToPdfUiState> = _textToPdfState.asStateFlow()
+
+    private val _wordToPdfState = MutableStateFlow(WordToPdfUiState())
+    val wordToPdfState: StateFlow<WordToPdfUiState> = _wordToPdfState.asStateFlow()
+
+    private val _pdfToWordState = MutableStateFlow(
+        PdfToWordUiState(hasBengaliOcrPack = PdfToWordEngine.hasBengaliOcrPack(appContext))
+    )
+    val pdfToWordState: StateFlow<PdfToWordUiState> = _pdfToWordState.asStateFlow()
+
+    private val _pdfToLongImageState = MutableStateFlow(PdfToLongImageUiState())
+    val pdfToLongImageState: StateFlow<PdfToLongImageUiState> = _pdfToLongImageState.asStateFlow()
 
     private val _toastEvents = MutableSharedFlow<String>(extraBufferCapacity = 8)
     val toastEvents: SharedFlow<String> = _toastEvents.asSharedFlow()
@@ -211,11 +300,88 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun renameFolder(folderId: Long, newName: String) {
+        if (newName.isBlank()) {
+            showToast("অনুগ্রহ করে ফোল্ডারের বৈধ নাম লিখুন।")
+            return
+        }
+        viewModelScope.launch {
+            repository.renameFolder(folderId, newName)
+            showToast("ফোল্ডারের নাম পরিবর্তন করা হয়েছে।")
+        }
+    }
+
     fun deleteFolder(folderId: Long) {
         viewModelScope.launch {
             if (_selectedFolderId.value == folderId) _selectedFolderId.value = null
             repository.deleteFolder(folderId)
             showToast("ফোল্ডারটি মুছে ফেলা হয়েছে।")
+        }
+    }
+
+    fun importPickedFiles(
+        uris: List<Uri>,
+        onOpenWorkspace: () -> Unit,
+        onOpenWordToPdf: () -> Unit,
+        onOpenTextToPdf: () -> Unit
+    ) {
+        if (uris.isEmpty()) return
+        viewModelScope.launch {
+            val imageUris = mutableListOf<Uri>()
+            var firstWordUri: Uri? = null
+            var firstTxtUri: Uri? = null
+            var importedPdfCount = 0
+            var failedCount = 0
+
+            for (uri in uris) {
+                val rawName = FileActionsHelper.queryDisplayNameWithExtension(appContext, uri).lowercase()
+                val mime = FileActionsHelper.queryMimeType(appContext, uri)?.lowercase() ?: ""
+                when {
+                    mime == "application/pdf" || rawName.endsWith(".pdf") -> {
+                        val res = repository.importPdfUri(uri, _selectedFolderId.value)
+                        if (res.isSuccess) importedPdfCount++ else failedCount++
+                    }
+                    mime.startsWith("image/") || rawName.endsWith(".jpg") || rawName.endsWith(".jpeg") ||
+                        rawName.endsWith(".png") || rawName.endsWith(".webp") || rawName.endsWith(".bmp") -> {
+                        imageUris.add(uri)
+                    }
+                    rawName.endsWith(".docx") || rawName.endsWith(".doc") ||
+                        mime.contains("word") || mime.contains("msword") -> {
+                        if (firstWordUri == null) firstWordUri = uri
+                    }
+                    rawName.endsWith(".txt") || mime.startsWith("text/") -> {
+                        if (firstTxtUri == null) firstTxtUri = uri
+                    }
+                    else -> {
+                        // Try importing unknown document as PDF if valid; otherwise count unsupported
+                        val res = repository.importPdfUri(uri, _selectedFolderId.value)
+                        if (res.isSuccess) importedPdfCount++ else failedCount++
+                    }
+                }
+            }
+
+            if (importedPdfCount > 0) {
+                showToast("${BengaliFormatters.toBengaliDigits(importedPdfCount)}টি পিডিএফ সফলভাবে ইমপোর্ট হয়েছে।")
+            }
+            if (failedCount > 0 && importedPdfCount == 0 && imageUris.isEmpty() && firstWordUri == null && firstTxtUri == null) {
+                showToast("নির্বাচিত ফাইলটি পড়া বা ইমপোর্ট করা যায়নি।")
+            }
+
+            when {
+                imageUris.isNotEmpty() -> {
+                    clearWorkspace()
+                    addPickedImagesToWorkspace(imageUris) { onOpenWorkspace() }
+                }
+                firstWordUri != null -> {
+                    loadWordUri(firstWordUri)
+                    onOpenWordToPdf()
+                }
+                firstTxtUri != null -> {
+                    resetTextToPdf()
+                    importTextFileToEditor(firstTxtUri)
+                    onOpenTextToPdf()
+                }
+            }
         }
     }
 
@@ -570,6 +736,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun setPdfToImageFormat(format: ImageOutputFormat) {
+        _pdfToImageState.update { it.copy(outputFormat = format) }
+    }
+
+    fun setPdfToImageQuality(quality: ImageExportQuality) {
+        _pdfToImageState.update { it.copy(outputQuality = quality) }
+    }
+
     // --- Page Organizer Flow ---
 
     fun loadDocumentForOrganizer(doc: PdfDocumentEntity) {
@@ -578,10 +752,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             showToast("পিডিএফ ফাইলটি পাওয়া যায়নি।")
             return
         }
+        extractPdfForOrganizer(file, doc.name, doc.id)
+    }
+
+    fun loadExternalPdfForOrganizer(uri: Uri) {
+        viewModelScope.launch {
+            repository.copyExternalPdfToTemp(uri).fold(
+                onSuccess = { (file, name) -> extractPdfForOrganizer(file, name, null) },
+                onFailure = { err ->
+                    _organizerState.value = OrganizerUiState(
+                        errorBn = err.message ?: "পিডিএফ ফাইলটি পড়া যায়নি।"
+                    )
+                }
+            )
+        }
+    }
+
+    private fun extractPdfForOrganizer(file: File, name: String, docId: Long?) {
         viewModelScope.launch {
             _organizerState.value = OrganizerUiState(
-                sourceDocumentId = doc.id,
-                sourceName = doc.name,
+                sourceDocumentId = docId,
+                sourceName = name,
                 sourceFile = file,
                 isLoading = true
             )
@@ -680,5 +871,408 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun resetOrganizer() {
         _organizerState.value = OrganizerUiState()
+    }
+
+    // --- Text to PDF Flow ---
+
+    fun resetTextToPdf() {
+        _textToPdfState.value = TextToPdfUiState(
+            fileName = BengaliFormatters.defaultPdfTitle()
+        )
+    }
+
+    fun updateTextToPdf(transform: (TextToPdfUiState) -> TextToPdfUiState) {
+        _textToPdfState.update { transform(it).copy(errorBn = null, createdDocId = null) }
+    }
+
+    fun importTextFileToEditor(uri: Uri) {
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    val name = FileActionsHelper.queryDisplayNameWithExtension(appContext, uri)
+                        .substringBeforeLast('.')
+                        .ifBlank { BengaliFormatters.defaultPdfTitle() }
+                    val content = appContext.contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use {
+                        it.readText()
+                    } ?: error("টেক্সট ফাইলটি পড়া যায়নি।")
+                    name to content
+                }
+            }
+            result.fold(
+                onSuccess = { (name, content) ->
+                    _textToPdfState.update {
+                        it.copy(
+                            fileName = BengaliFormatters.sanitizeFileName(name),
+                            title = if (it.title.isBlank()) name else it.title,
+                            bodyText = content,
+                            errorBn = null,
+                            createdDocId = null
+                        )
+                    }
+                    showToast("টেক্সট ফাইল লোড করা হয়েছে।")
+                },
+                onFailure = { err ->
+                    showToast(err.message ?: "টেক্সট ফাইল লোড করা যায়নি।")
+                }
+            )
+        }
+    }
+
+    fun createPdfFromText() {
+        val state = _textToPdfState.value
+        viewModelScope.launch {
+            _textToPdfState.update { it.copy(isBuilding = true, errorBn = null, createdDocId = null) }
+            val (pdfFile, thumbFile) = repository.createNewPdfTargetPair()
+            val config = TextPdfConfig(
+                fileName = state.fileName.ifBlank { BengaliFormatters.defaultPdfTitle() },
+                title = state.title,
+                bodyText = state.bodyText,
+                fontSizePt = state.fontSizePt,
+                alignment = state.alignment,
+                pageSize = state.pageSize,
+                folderId = _selectedFolderId.value
+            )
+            TextToPdfEngine.createPdfFromText(
+                context = appContext,
+                config = config,
+                outputPdfFile = pdfFile,
+                outputThumbFile = thumbFile
+            ).fold(
+                onSuccess = { info ->
+                    val saved = repository.registerPdfDocument(
+                        name = config.fileName,
+                        info = info,
+                        folderId = config.folderId
+                    )
+                    _textToPdfState.update {
+                        it.copy(isBuilding = false, createdDocId = saved.id, createdDocName = saved.name)
+                    }
+                    showToast("টেক্সট থেকে পিডিএফ তৈরি হয়েছে।")
+                },
+                onFailure = { err ->
+                    _textToPdfState.update {
+                        it.copy(isBuilding = false, errorBn = err.message ?: "পিডিএফ তৈরি করতে সমস্যা হয়েছে।")
+                    }
+                }
+            )
+        }
+    }
+
+    // --- Word to PDF Flow ---
+
+    fun resetWordToPdf() {
+        _wordToPdfState.value = WordToPdfUiState()
+    }
+
+    fun loadWordUri(uri: Uri) {
+        viewModelScope.launch {
+            _wordToPdfState.value = WordToPdfUiState(isParsing = true)
+            repository.copyDocumentToWorkspace(uri, "docx").fold(
+                onSuccess = { (file, baseName) ->
+                    val parsed = withContext(Dispatchers.IO) {
+                        WordDocumentParser.parseWordFile(file, baseName)
+                    }
+                    parsed.fold(
+                        onSuccess = { doc ->
+                            _wordToPdfState.value = WordToPdfUiState(
+                                sourceFile = file,
+                                sourceName = baseName,
+                                isParsing = false,
+                                parsedDocument = doc
+                            )
+                        },
+                        onFailure = { err ->
+                            _wordToPdfState.value = WordToPdfUiState(
+                                sourceName = baseName,
+                                isParsing = false,
+                                errorBn = err.message ?: "ওয়ার্ড ফাইলটি পড়া যায়নি।"
+                            )
+                        }
+                    )
+                },
+                onFailure = { err ->
+                    _wordToPdfState.value = WordToPdfUiState(
+                        isParsing = false,
+                        errorBn = err.message ?: "ওয়ার্ড ফাইলটি লোড করা যায়নি।"
+                    )
+                }
+            )
+        }
+    }
+
+    fun convertWordToPdf() {
+        val state = _wordToPdfState.value
+        val parsed = state.parsedDocument ?: return
+        viewModelScope.launch {
+            _wordToPdfState.update {
+                it.copy(isConverting = true, progressCurrent = 0, progressTotal = parsed.blocks.size, errorBn = null, createdDocId = null)
+            }
+            val (outPdf, outThumb) = repository.createNewPdfTargetPair()
+            WordToPdfEngine.convertParsedWordToPdf(
+                context = appContext,
+                parsed = parsed,
+                outputPdfFile = outPdf,
+                outputThumbFile = outThumb,
+                onProgress = { cur, tot ->
+                    _wordToPdfState.update { it.copy(progressCurrent = cur, progressTotal = tot) }
+                }
+            ).fold(
+                onSuccess = { info ->
+                    val saved = repository.registerPdfDocument(
+                        name = state.sourceName.ifBlank { parsed.title },
+                        info = info,
+                        folderId = _selectedFolderId.value
+                    )
+                    _wordToPdfState.update {
+                        it.copy(isConverting = false, createdDocId = saved.id, createdDocName = saved.name)
+                    }
+                    showToast("ওয়ার্ড ফাইলটি সফলভাবে পিডিএফ হয়েছে।")
+                },
+                onFailure = { err ->
+                    _wordToPdfState.update {
+                        it.copy(isConverting = false, errorBn = err.message ?: "ওয়ার্ড থেকে পিডিএফ তৈরি করা যায়নি।")
+                    }
+                }
+            )
+        }
+    }
+
+    // --- PDF to Word Flow ---
+
+    fun resetPdfToWord() {
+        _pdfToWordState.value = PdfToWordUiState(
+            hasBengaliOcrPack = PdfToWordEngine.hasBengaliOcrPack(appContext)
+        )
+    }
+
+    fun selectAppPdfForWord(doc: PdfDocumentEntity) {
+        val file = File(doc.filePath)
+        if (!file.exists()) {
+            showToast("পিডিএফ ফাইলটি পাওয়া যায়নি।")
+            return
+        }
+        _pdfToWordState.value = PdfToWordUiState(
+            sourceFile = file,
+            sourceName = doc.name,
+            pageCount = doc.pageCount,
+            hasBengaliOcrPack = PdfToWordEngine.hasBengaliOcrPack(appContext)
+        )
+    }
+
+    fun selectExternalPdfForWord(uri: Uri) {
+        viewModelScope.launch {
+            repository.copyExternalPdfToTemp(uri).fold(
+                onSuccess = { (file, name) ->
+                    val count = PdfGenerator.inspectPdfPageCount(file)
+                    _pdfToWordState.value = PdfToWordUiState(
+                        sourceFile = file,
+                        sourceName = name,
+                        pageCount = count,
+                        hasBengaliOcrPack = PdfToWordEngine.hasBengaliOcrPack(appContext)
+                    )
+                },
+                onFailure = { err ->
+                    _pdfToWordState.update {
+                        it.copy(errorBn = err.message ?: "পিডিএফ ফাইলটি নির্বাচন করা যায়নি।")
+                    }
+                }
+            )
+        }
+    }
+
+    fun downloadBengaliOcrPack() {
+        viewModelScope.launch {
+            _pdfToWordState.update {
+                it.copy(isDownloadingOcr = true, ocrDownloadStatusBn = "ওসিআর প্যাক ডাউনলোড শুরু হচ্ছে...", errorBn = null)
+            }
+            PdfToWordEngine.downloadBengaliAndEnglishOcrPack(
+                context = appContext,
+                onStatus = { status ->
+                    _pdfToWordState.update { it.copy(ocrDownloadStatusBn = status) }
+                }
+            ).fold(
+                onSuccess = {
+                    _pdfToWordState.update {
+                        it.copy(
+                            isDownloadingOcr = false,
+                            hasBengaliOcrPack = PdfToWordEngine.hasBengaliOcrPack(appContext),
+                            ocrDownloadStatusBn = "বাংলা ও ইংরেজি ওসিআর প্রস্তুত।"
+                        )
+                    }
+                    showToast("বাংলা ওসিআর প্যাক সফলভাবে ইনস্টল হয়েছে।")
+                },
+                onFailure = { err ->
+                    _pdfToWordState.update {
+                        it.copy(
+                            isDownloadingOcr = false,
+                            ocrDownloadStatusBn = "",
+                            errorBn = err.message ?: "ওসিআর প্যাক ডাউনলোড করা যায়নি।"
+                        )
+                    }
+                }
+            )
+        }
+    }
+
+    fun convertPdfToWord() {
+        val state = _pdfToWordState.value
+        val src = state.sourceFile ?: return
+        viewModelScope.launch {
+            _pdfToWordState.update {
+                it.copy(
+                    isConverting = true,
+                    currentPage = 0,
+                    totalPages = state.pageCount,
+                    statusBn = "পিডিএফ বিশ্লেষণ চলছে...",
+                    result = null,
+                    errorBn = null
+                )
+            }
+            val outDocx = repository.createNewExportFile(state.sourceName, "docx")
+            PdfToWordEngine.convertPdfToWord(
+                context = appContext,
+                sourcePdfFile = src,
+                displayTitle = state.sourceName,
+                outputDocxFile = outDocx,
+                onProgress = { cur, tot, msg ->
+                    _pdfToWordState.update {
+                        it.copy(currentPage = cur, totalPages = tot, statusBn = msg)
+                    }
+                }
+            ).fold(
+                onSuccess = { res ->
+                    _pdfToWordState.update {
+                        it.copy(isConverting = false, result = res, statusBn = "সম্পন্ন হয়েছে")
+                    }
+                    showToast("পিডিএফ থেকে ওয়ার্ড (.docx) তৈরি হয়েছে।")
+                },
+                onFailure = { err ->
+                    _pdfToWordState.update {
+                        it.copy(isConverting = false, errorBn = err.message ?: "ওয়ার্ড ফাইলে রূপান্তর করা যায়নি।")
+                    }
+                }
+            )
+        }
+    }
+
+    // --- PDF to Long Image Flow ---
+
+    fun resetPdfToLongImage() {
+        _pdfToLongImageState.value = PdfToLongImageUiState()
+    }
+
+    fun loadAppPdfForLongImage(doc: PdfDocumentEntity) {
+        val file = File(doc.filePath)
+        if (!file.exists()) {
+            showToast("পিডিএফ ফাইলটি পাওয়া যায়নি।")
+            return
+        }
+        extractPdfForLongImage(file, doc.name)
+    }
+
+    fun loadExternalPdfForLongImage(uri: Uri) {
+        viewModelScope.launch {
+            repository.copyExternalPdfToTemp(uri).fold(
+                onSuccess = { (file, name) -> extractPdfForLongImage(file, name) },
+                onFailure = { err ->
+                    _pdfToLongImageState.value = PdfToLongImageUiState(
+                        errorBn = err.message ?: "পিডিএফ ফাইলটি লোড করা যায়নি।"
+                    )
+                }
+            )
+        }
+    }
+
+    private fun extractPdfForLongImage(file: File, name: String) {
+        viewModelScope.launch {
+            _pdfToLongImageState.value = PdfToLongImageUiState(sourceName = name, isLoadingPages = true)
+            PdfPageExtractor.extractPagesToTempFiles(
+                context = appContext,
+                pdfFile = file,
+                scale = 2.0f,
+                onProgress = { cur, tot ->
+                    _pdfToLongImageState.update { it.copy(currentPage = cur, totalPages = tot) }
+                }
+            ).fold(
+                onSuccess = { pages ->
+                    _pdfToLongImageState.value = PdfToLongImageUiState(
+                        sourceName = name,
+                        isLoadingPages = false,
+                        pages = pages,
+                        selectedIndices = pages.indices.toSet()
+                    )
+                },
+                onFailure = { err ->
+                    _pdfToLongImageState.value = PdfToLongImageUiState(
+                        sourceName = name,
+                        isLoadingPages = false,
+                        errorBn = err.message ?: "পিডিএফ পৃষ্ঠাগুলো পড়া যায়নি।"
+                    )
+                }
+            )
+        }
+    }
+
+    fun toggleLongImagePage(index: Int) {
+        _pdfToLongImageState.update { state ->
+            val next = if (index in state.selectedIndices) state.selectedIndices - index else state.selectedIndices + index
+            state.copy(selectedIndices = next, stitchedResult = null)
+        }
+    }
+
+    fun selectAllLongImagePages(selectAll: Boolean) {
+        _pdfToLongImageState.update { state ->
+            state.copy(
+                selectedIndices = if (selectAll) state.pages.indices.toSet() else emptySet(),
+                stitchedResult = null
+            )
+        }
+    }
+
+    fun setLongImageFormat(format: ImageOutputFormat) {
+        _pdfToLongImageState.update { it.copy(outputFormat = format, stitchedResult = null) }
+    }
+
+    fun setLongImageQuality(quality: ImageExportQuality) {
+        _pdfToLongImageState.update { it.copy(outputQuality = quality, stitchedResult = null) }
+    }
+
+    fun generateLongImage() {
+        val state = _pdfToLongImageState.value
+        val orderedFiles = state.selectedIndices.sorted().mapNotNull { idx ->
+            state.pages.getOrNull(idx)?.let { File(it.imagePath) }
+        }
+        if (orderedFiles.isEmpty()) {
+            showToast("কমপক্ষে একটি পৃষ্ঠা নির্বাচন করুন।")
+            return
+        }
+        viewModelScope.launch {
+            _pdfToLongImageState.update {
+                it.copy(isStitching = true, stitchCurrent = 0, stitchTotal = orderedFiles.size, errorBn = null)
+            }
+            val outFile = repository.createNewExportFile(
+                "${state.sourceName}_লম্বা_ছবি",
+                state.outputFormat.extension
+            )
+            LongImageStitcher.stitchPagesToLongImage(
+                pageImageFiles = orderedFiles,
+                outputFile = outFile,
+                format = state.outputFormat,
+                quality = state.outputQuality,
+                onProgress = { cur, tot ->
+                    _pdfToLongImageState.update { it.copy(stitchCurrent = cur, stitchTotal = tot) }
+                }
+            ).fold(
+                onSuccess = { res ->
+                    _pdfToLongImageState.update { it.copy(isStitching = false, stitchedResult = res) }
+                    showToast("লম্বা ছবি তৈরি হয়েছে।")
+                },
+                onFailure = { err ->
+                    _pdfToLongImageState.update {
+                        it.copy(isStitching = false, errorBn = err.message ?: "লম্বা ছবি তৈরি করা যায়নি।")
+                    }
+                }
+            )
+        }
     }
 }

@@ -3,11 +3,14 @@ package com.example.ui.screens
 import android.graphics.BitmapFactory
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -26,6 +29,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -37,6 +41,8 @@ import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -70,6 +76,8 @@ import com.example.ui.theme.SubtleBorder
 import com.example.ui.theme.WhiteBackground
 import com.example.util.BengaliFormatters
 import com.example.util.FileActionsHelper
+import com.example.util.ImageExportQuality
+import com.example.util.ImageOutputFormat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -83,6 +91,8 @@ fun PdfToImageScreen(
     onSelectAppDocument: (PdfDocumentEntity) -> Unit,
     onToggleSelect: (Int) -> Unit,
     onSelectAll: (Boolean) -> Unit,
+    onSelectFormat: (ImageOutputFormat) -> Unit,
+    onSelectQuality: (ImageExportQuality) -> Unit,
     onBack: () -> Unit
 ) {
     BackHandler(onBack = onBack)
@@ -91,6 +101,41 @@ fun PdfToImageScreen(
     val scope = rememberCoroutineScope()
     var showPicker by remember { mutableStateOf(false) }
     var isSaving by remember { mutableStateOf(false) }
+
+    val saveToFolderLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocumentTree()
+    ) { treeUri ->
+        if (treeUri != null && uiState.selectedIndices.isNotEmpty()) {
+            scope.launch {
+                isSaving = true
+                var savedCount = 0
+                withContext(Dispatchers.IO) {
+                    uiState.selectedIndices.sorted().forEach { idx ->
+                        val f = File(uiState.pages[idx].imagePath)
+                        val bmp = BitmapFactory.decodeFile(f.absolutePath)
+                        if (bmp != null) {
+                            val res = FileActionsHelper.saveBitmapToFolderUri(
+                                context = context,
+                                bitmap = bmp,
+                                treeUri = treeUri,
+                                fileNameWithoutExt = "${uiState.sourceName}_পৃষ্ঠা_${idx + 1}",
+                                format = uiState.outputFormat,
+                                qualityPercent = uiState.outputQuality.jpegQuality
+                            )
+                            bmp.recycle()
+                            if (res.isSuccess) savedCount++
+                        }
+                    }
+                }
+                isSaving = false
+                Toast.makeText(
+                    context,
+                    "${BengaliFormatters.toBengaliDigits(savedCount)}টি ছবি নির্বাচিত ফোল্ডারে সংরক্ষিত হয়েছে।",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -103,7 +148,7 @@ fun PdfToImageScreen(
             subtitle = if (uiState.pages.isNotEmpty()) {
                 "${uiState.sourceName} • নির্বাচিত: ${BengaliFormatters.toBengaliDigits(uiState.selectedIndices.size)} / ${BengaliFormatters.toBengaliDigits(uiState.pages.size)}"
             } else {
-                "পিডিএফের প্রতিটি পৃষ্ঠা ছবি হিসেবে সংরক্ষণ করুন"
+                "পিডিএফের প্রতিটি পৃষ্ঠা JPG বা PNG হিসেবে সংরক্ষণ করুন"
             },
             onBackClick = onBack
         )
@@ -194,6 +239,40 @@ fun PdfToImageScreen(
                         }
                     }
 
+                    // Format & Quality selector bar
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState())
+                            .padding(horizontal = 16.dp, vertical = 2.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        ImageOutputFormat.entries.forEach { fmt ->
+                            FilterChip(
+                                selected = uiState.outputFormat == fmt,
+                                onClick = { onSelectFormat(fmt) },
+                                label = { Text(fmt.titleBn) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = RoyalBlue,
+                                    selectedLabelColor = WhiteBackground
+                                )
+                            )
+                        }
+                        Spacer(Modifier.width(4.dp))
+                        ImageExportQuality.entries.forEach { q ->
+                            FilterChip(
+                                selected = uiState.outputQuality == q,
+                                onClick = { onSelectQuality(q) },
+                                label = { Text(q.titleBn) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = RoyalBlue,
+                                    selectedLabelColor = WhiteBackground
+                                )
+                            )
+                        }
+                    }
+
                     LazyVerticalGrid(
                         columns = GridCells.Fixed(2),
                         modifier = Modifier.weight(1f),
@@ -256,8 +335,8 @@ fun PdfToImageScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 10.dp),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         OutlinedButton(
                             onClick = {
@@ -265,12 +344,22 @@ fun PdfToImageScreen(
                                 FileActionsHelper.shareImages(context, files)
                             },
                             enabled = uiState.selectedIndices.isNotEmpty() && !isSaving,
-                            modifier = Modifier.weight(1f).height(50.dp),
-                            shape = RoundedCornerShape(14.dp)
+                            modifier = Modifier.weight(0.9f).height(48.dp),
+                            shape = RoundedCornerShape(12.dp)
                         ) {
-                            Icon(Icons.Filled.Share, contentDescription = null)
-                            Spacer(Modifier.width(6.dp))
-                            Text("শেয়ার করুন")
+                            Icon(Icons.Filled.Share, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("শেয়ার", maxLines = 1)
+                        }
+                        OutlinedButton(
+                            onClick = { saveToFolderLauncher.launch(null) },
+                            enabled = uiState.selectedIndices.isNotEmpty() && !isSaving,
+                            modifier = Modifier.weight(1f).height(48.dp),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Icon(Icons.Filled.FolderOpen, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("ফোল্ডারে", maxLines = 1)
                         }
                         Button(
                             onClick = {
@@ -282,10 +371,12 @@ fun PdfToImageScreen(
                                             val f = File(uiState.pages[idx].imagePath)
                                             val bmp = BitmapFactory.decodeFile(f.absolutePath)
                                             if (bmp != null) {
-                                                val res = FileActionsHelper.saveBitmapToGallery(
-                                                    context,
-                                                    bmp,
-                                                    "${uiState.sourceName}_পৃষ্ঠা_${idx + 1}"
+                                                val res = FileActionsHelper.saveBitmapToGalleryWithFormat(
+                                                    context = context,
+                                                    bitmap = bmp,
+                                                    fileNameWithoutExt = "${uiState.sourceName}_পৃষ্ঠা_${idx + 1}",
+                                                    format = uiState.outputFormat,
+                                                    qualityPercent = uiState.outputQuality.jpegQuality
                                                 )
                                                 bmp.recycle()
                                                 if (res.isSuccess) savedCount++
@@ -301,13 +392,13 @@ fun PdfToImageScreen(
                                 }
                             },
                             enabled = uiState.selectedIndices.isNotEmpty() && !isSaving,
-                            modifier = Modifier.weight(1.3f).height(50.dp),
-                            shape = RoundedCornerShape(14.dp),
+                            modifier = Modifier.weight(1.25f).height(48.dp),
+                            shape = RoundedCornerShape(12.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = RoyalBlue)
                         ) {
-                            Icon(Icons.Filled.SaveAlt, contentDescription = null)
-                            Spacer(Modifier.width(6.dp))
-                            Text(if (isSaving) "সংরক্ষণ হচ্ছে..." else "গ্যালারিতে সংরক্ষণ")
+                            Icon(Icons.Filled.SaveAlt, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text(if (isSaving) "হচ্ছে..." else "গ্যালারিতে", maxLines = 1)
                         }
                     }
                 }

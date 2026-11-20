@@ -15,5 +15,6 @@ data class PdfDocumentEntity(
     val createdAt: Long = System.currentTimeMillis(),
     val lastOpenedAt: Long = System.currentTimeMillis(),
     val isFavorite: Boolean = false,
-    val isCompressed: Boolean = false
+    val isCompressed: Boolean = false,
+    val fileType: String = "PDF"
 )

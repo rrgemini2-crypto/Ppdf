@@ -18,12 +18,14 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddPhotoAlternate
+import androidx.compose.material.icons.filled.Article
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Collections
 import androidx.compose.material.icons.filled.Compress
 import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.Crop
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.DocumentScanner
 import androidx.compose.material.icons.filled.DriveFileRenameOutline
 import androidx.compose.material.icons.filled.Edit
@@ -32,6 +34,9 @@ import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.Reorder
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.TextFields
+import androidx.compose.material.icons.filled.UploadFile
+import androidx.compose.material.icons.filled.ViewDay
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -64,12 +69,17 @@ enum class ToolAction {
     CAMERA_TO_PDF,
     DOCUMENT_SCAN,
     MULTI_IMAGE_TO_PDF,
+    TEXT_TO_PDF,
+    WORD_TO_PDF,
+    PDF_TO_WORD,
     PDF_TO_IMAGE,
+    PDF_TO_LONG_IMAGE,
     COMPRESS_PDF,
     EDIT_IMAGE,
     FILTER_IMAGE,
     CROP_IMAGE,
     ORGANIZE_PAGES,
+    IMPORT_FILES,
     RENAME_PDF,
     SHARE_PDF,
     DELETE_PDF,
@@ -93,27 +103,32 @@ fun ToolsTab(
         ToolTileData(ToolAction.IMAGE_TO_PDF, "১. ছবি থেকে পিডিএফ", Icons.Filled.AddPhotoAlternate, RoyalBlue, LightBlueTint),
         ToolTileData(ToolAction.CAMERA_TO_PDF, "২. ক্যামেরা দিয়ে পিডিএফ", Icons.Filled.CameraAlt, RoyalBlue, LightBlueTint),
         ToolTileData(ToolAction.DOCUMENT_SCAN, "৩. দলিল স্ক্যান", Icons.Filled.DocumentScanner, RoyalBlue, LightBlueTint),
-        ToolTileData(ToolAction.MULTI_IMAGE_TO_PDF, "৪. একাধিক ছবি থেকে পিডিএফ", Icons.Filled.Collections, RoyalBlue, LightBlueTint)
+        ToolTileData(ToolAction.MULTI_IMAGE_TO_PDF, "৪. একাধিক ছবি থেকে পিডিএফ", Icons.Filled.Collections, RoyalBlue, LightBlueTint),
+        ToolTileData(ToolAction.TEXT_TO_PDF, "৫. টেক্সট থেকে পিডিএফ", Icons.Filled.TextFields, RoyalBlue, LightBlueTint)
     )
 
     val convertTools = listOf(
-        ToolTileData(ToolAction.PDF_TO_IMAGE, "৫. পিডিএফ থেকে ছবি", Icons.Filled.Image, SuccessGreen, SuccessGreenContainer),
-        ToolTileData(ToolAction.COMPRESS_PDF, "৬. পিডিএফ সংকুচিত করা", Icons.Filled.Compress, SuccessGreen, SuccessGreenContainer)
+        ToolTileData(ToolAction.WORD_TO_PDF, "৬. ওয়ার্ড থেকে পিডিএফ", Icons.Filled.Description, SuccessGreen, SuccessGreenContainer),
+        ToolTileData(ToolAction.PDF_TO_WORD, "৭. পিডিএফ থেকে ওয়ার্ড", Icons.Filled.Article, SuccessGreen, SuccessGreenContainer),
+        ToolTileData(ToolAction.PDF_TO_IMAGE, "৮. পিডিএফ থেকে ছবি", Icons.Filled.Image, SuccessGreen, SuccessGreenContainer),
+        ToolTileData(ToolAction.PDF_TO_LONG_IMAGE, "৯. পিডিএফ থেকে লম্বা ছবি", Icons.Filled.ViewDay, SuccessGreen, SuccessGreenContainer),
+        ToolTileData(ToolAction.COMPRESS_PDF, "১০. পিডিএফ সংকুচিত করা", Icons.Filled.Compress, SuccessGreen, SuccessGreenContainer)
     )
 
     val editTools = listOf(
-        ToolTileData(ToolAction.EDIT_IMAGE, "৭. ছবি সম্পাদনা", Icons.Filled.Edit, WarningAmber, WarningAmberContainer),
-        ToolTileData(ToolAction.FILTER_IMAGE, "৮. ছবি ফিল্টার", Icons.Filled.FilterVintage, WarningAmber, WarningAmberContainer),
-        ToolTileData(ToolAction.CROP_IMAGE, "৯. ছবি কাটছাঁট", Icons.Filled.Crop, WarningAmber, WarningAmberContainer),
-        ToolTileData(ToolAction.ORGANIZE_PAGES, "১০. পৃষ্ঠা সাজানো", Icons.Filled.Reorder, WarningAmber, WarningAmberContainer)
+        ToolTileData(ToolAction.EDIT_IMAGE, "১১. ছবি সম্পাদনা", Icons.Filled.Edit, WarningAmber, WarningAmberContainer),
+        ToolTileData(ToolAction.FILTER_IMAGE, "১২. ছবি ফিল্টার", Icons.Filled.FilterVintage, WarningAmber, WarningAmberContainer),
+        ToolTileData(ToolAction.CROP_IMAGE, "১৩. ছবি কাটছাঁট", Icons.Filled.Crop, WarningAmber, WarningAmberContainer),
+        ToolTileData(ToolAction.ORGANIZE_PAGES, "১৪. পৃষ্ঠা সাজানো", Icons.Filled.Reorder, WarningAmber, WarningAmberContainer)
     )
 
     val manageTools = listOf(
-        ToolTileData(ToolAction.RENAME_PDF, "১১. পিডিএফের নাম পরিবর্তন", Icons.Filled.DriveFileRenameOutline, RoyalBlue, LightBlueTint),
-        ToolTileData(ToolAction.SHARE_PDF, "১২. ফাইল শেয়ার", Icons.Filled.Share, RoyalBlue, LightBlueTint),
-        ToolTileData(ToolAction.DELETE_PDF, "১৩. ফাইল মুছে ফেলা", Icons.Filled.DeleteOutline, ErrorCrimson, ErrorCrimsonContainer),
-        ToolTileData(ToolAction.CREATE_FOLDER, "১৪. নতুন ফোল্ডার তৈরি", Icons.Filled.CreateNewFolder, RoyalBlue, LightBlueTint),
-        ToolTileData(ToolAction.PRINT_PDF, "১৫. পিডিএফ প্রিন্ট", Icons.Filled.Print, RoyalBlue, LightBlueTint)
+        ToolTileData(ToolAction.IMPORT_FILES, "১৫. ফাইল ইমপোর্ট করুন", Icons.Filled.UploadFile, RoyalBlue, LightBlueTint),
+        ToolTileData(ToolAction.CREATE_FOLDER, "১৬. নতুন ফোল্ডার তৈরি", Icons.Filled.CreateNewFolder, RoyalBlue, LightBlueTint),
+        ToolTileData(ToolAction.RENAME_PDF, "১৭. পিডিএফের নাম পরিবর্তন", Icons.Filled.DriveFileRenameOutline, RoyalBlue, LightBlueTint),
+        ToolTileData(ToolAction.SHARE_PDF, "১৮. ফাইল শেয়ার", Icons.Filled.Share, RoyalBlue, LightBlueTint),
+        ToolTileData(ToolAction.DELETE_PDF, "১৯. ফাইল মুছে ফেলা", Icons.Filled.DeleteOutline, ErrorCrimson, ErrorCrimsonContainer),
+        ToolTileData(ToolAction.PRINT_PDF, "২০. পিডিএফ প্রিন্ট", Icons.Filled.Print, RoyalBlue, LightBlueTint)
     )
 
     Column(
