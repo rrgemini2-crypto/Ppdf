@@ -1,0 +1,6 @@
+{
+  "name": "সহজ পিডিএফ মেকার",
+  "description": "অফলাইনে ছবি থেকে পিডিএফ তৈরি, স্বয়ংক্রিয় দলিল স্ক্যান, ফিল্টার, পিডিএফ সংকোচন ও ব্যবস্থাপনার সম্পূর্ণ বাংলা অ্যাপ।",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
